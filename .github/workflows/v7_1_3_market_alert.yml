@@ -1,0 +1,114 @@
+name: V7.1.3 Market Alert
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    # 10:20 UTC = 15:50 IST
+    # Runs after NSE market close on weekdays.
+    - cron: "20 10 * * 1-5"
+
+permissions:
+  contents: read
+
+jobs:
+  market-alert:
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 35
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Show environment
+        run: |
+          python --version
+          pip --version
+          python - <<'PY'
+          import numpy
+          import pandas
+          import sklearn
+          import yfinance
+          print("numpy:", numpy.__version__)
+          print("pandas:", pandas.__version__)
+          print("sklearn:", sklearn.__version__)
+          print("yfinance:", yfinance.__version__)
+          PY
+
+      - name: Show repository
+        run: |
+          echo "Repository:"
+          ls -la
+
+          echo "Workflows:"
+          find .github -maxdepth 3 -type f -print || true
+
+          echo "Data:"
+          ls -la data || true
+
+      - name: Run V7.1.3
+        env:
+          BACKTEST_PERIOD: "6y"
+          ROUND_TRIP_COST: "0.003"
+
+          # Faster research cycle.
+          REFIT_EVERY: "10"
+
+          # Primary production horizon.
+          MAX_POSITIONS: "8"
+
+          # Keep current Gemini optional.
+          USE_CURRENT_GEMINI: "false"
+
+          # Telegram.
+          SEND_TELEGRAM: "true"
+
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+          # Optional current Gemini.
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: "gemini-2.5-flash"
+
+          PYTHONUNBUFFERED: "1"
+
+        run: |
+          python V7_1_3_fixed.py
+
+      - name: Show audit files
+        if: always()
+        run: |
+          echo "Audit directory:"
+          find audit -maxdepth 2 -type f -print 2>/dev/null || true
+
+      - name: Show latest alert
+        if: always()
+        run: |
+          if [ -f audit/latest_telegram_alert.txt ]; then
+            cat audit/latest_telegram_alert.txt
+          else
+            echo "No Telegram alert file created."
+          fi
+
+      - name: Upload audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: V7.1.3-audit-${{ github.run_number }}
+          path: audit/
+          if-no-files-found: warn
+          retention-days: 30

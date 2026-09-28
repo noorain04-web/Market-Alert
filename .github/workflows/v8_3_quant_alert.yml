@@ -1,0 +1,94 @@
+name: V8.3 NSE Quant-Only Alert
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_backtest:
+        description: "Run 6-year point-in-time quant backtest before live scan"
+        required: false
+        default: "0"
+        type: choice
+        options:
+          - "0"
+          - "1"
+  schedule:
+    # 15:15 UTC = 20:45 IST. Adjust if desired.
+    - cron: "15 15 * * 1-5"
+
+permissions:
+  contents: read
+
+jobs:
+  alert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify Telegram secrets
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - <<'PY'
+          import os, sys
+          token = bool(os.getenv("TELEGRAM_BOT_TOKEN", "").strip())
+          chat = bool(os.getenv("TELEGRAM_CHAT_ID", "").strip())
+          print("TELEGRAM_BOT_TOKEN:", "PRESENT" if token else "MISSING")
+          print("TELEGRAM_CHAT_ID:", "PRESENT" if chat else "MISSING")
+          if not token or not chat:
+              sys.exit("Telegram secrets are required.")
+          PY
+
+      - name: Run V8.3
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+          PYTHONUNBUFFERED: "1"
+
+          BACKTEST_PERIOD: "6y"
+          LIVE_PERIOD: "2y"
+
+          HORIZON: "10"
+          ROUND_TRIP_COST: "0.003"
+
+          # Production/live gates
+          P_THRESHOLD: "0.62"
+          RETURN_THRESHOLD: "0.006"
+
+          TOP_N_ALERT: "8"
+          MAX_VOLATILITY: "0.065"
+          MIN_AVG_DAILY_VALUE_CR: "2.0"
+
+          # Only relevant to backtests
+          DEV_FRAC: "0.60"
+          VAL_FRAC: "0.20"
+
+          SEND_TELEGRAM: "1"
+          RUN_BACKTEST: ${{ github.event.inputs.run_backtest || '0' }}
+
+        run: |
+          python V8_3_nse_quant_only.py
+
+      - name: Upload audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: V8.3-audit-${{ github.run_number }}
+          path: audit/
+          if-no-files-found: warn
+          retention-days: 30

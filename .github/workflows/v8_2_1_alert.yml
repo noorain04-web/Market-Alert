@@ -1,10 +1,10 @@
-name: V8.2 NSE Quant + Gemini Alert
+name: V8.2.1 NSE Quant + Gemini Alert
 
 on:
   workflow_dispatch:
     inputs:
       run_backtest:
-        description: "Run the historical quant backtest before the live scan"
+        description: "Run the historical quant-only backtest before the live scan"
         required: false
         default: "0"
         type: choice
@@ -12,7 +12,7 @@ on:
           - "0"
           - "1"
   schedule:
-    # 15:15 UTC = 20:45 IST. Change if you want a different post-market run.
+    # 15:15 UTC = 20:45 IST on weekdays.
     - cron: "15 15 * * 1-5"
 
 permissions:
@@ -21,6 +21,7 @@ permissions:
 jobs:
   alert:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
@@ -37,7 +38,30 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run V8.2
+      - name: Verify required environment variables
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - <<'PY'
+          import os, sys
+          checks = {
+              "GEMINI_API_KEY": bool(os.getenv("GEMINI_API_KEY", "").strip()),
+              "TELEGRAM_BOT_TOKEN": bool(os.getenv("TELEGRAM_BOT_TOKEN", "").strip()),
+              "TELEGRAM_CHAT_ID": bool(os.getenv("TELEGRAM_CHAT_ID", "").strip()),
+          }
+          for name, ok in checks.items():
+              print(f"{name}: {'PRESENT' if ok else 'MISSING'}")
+          if not checks["GEMINI_API_KEY"]:
+              print("ERROR: GEMINI_API_KEY GitHub Secret is missing.")
+              sys.exit(1)
+          if not checks["TELEGRAM_BOT_TOKEN"] or not checks["TELEGRAM_CHAT_ID"]:
+              print("ERROR: Telegram secrets are missing.")
+              sys.exit(1)
+          PY
+
+      - name: Run V8.2.1
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -49,7 +73,6 @@ jobs:
 
           HORIZON: "10"
           ROUND_TRIP_COST: "0.003"
-
           P_THRESHOLD: "0.62"
           RETURN_THRESHOLD: "0.006"
           MAX_VOLATILITY: "0.065"
@@ -62,6 +85,9 @@ jobs:
           GEMINI_MODEL: "gemini-3.8-flash"
           ENABLE_GEMINI: "1"
           ENABLE_GEMINI_SEARCH: "1"
+          GEMINI_MAX_RETRIES: "3"
+          GEMINI_TIMEOUT_SECONDS: "90"
+          GEMINI_THINKING_LEVEL: "low"
 
           GEMINI_PROB_WEIGHT: "0.10"
           GEMINI_RETURN_WEIGHT: "0.15"
@@ -72,12 +98,13 @@ jobs:
           RUN_BACKTEST: ${{ github.event.inputs.run_backtest || '0' }}
 
         run: |
-          python V8_2_nse_quant_gemini.py
+          python V8_2_1_nse_quant_gemini.py
 
-      - name: Upload V8.2 audit
+      - name: Upload V8.2.1 audit
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: V8.2-audit-${{ github.run_number }}
+          name: V8.2.1-audit-${{ github.run_number }}
           path: audit/
           if-no-files-found: warn
           retention-days: 30

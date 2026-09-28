@@ -399,7 +399,7 @@ def make_models():
     ])
 
     reg_hgb = HistGradientBoostingRegressor(
-        loss="huber",
+        loss="squared_error",
         learning_rate=0.035,
         max_iter=260,
         max_leaf_nodes=15,

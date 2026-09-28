@@ -1,7 +1,8 @@
-numpy>=2.0
-pandas>=2.2
-scikit-learn>=1.6
-yfinance>=0.2.66
-requests>=2.32
-google-genai>=1.40
-pydantic>=2.8
+numpy>=2.0,<3
+pandas>=2.2,<3
+scikit-learn>=1.6,<2
+yfinance==0.2.66
+requests>=2.32,<3
+google-genai>=1.0
+pydantic>=2.7,<3
+

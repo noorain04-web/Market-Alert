@@ -1,0 +1,166 @@
+name: V8.4 NSE Quant-Only Research Alert
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quant-alert:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # ------------------------------------------------------------
+      # 1. Checkout repository
+      # ------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ------------------------------------------------------------
+      # 2. Python
+      # ------------------------------------------------------------
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      # ------------------------------------------------------------
+      # 3. Show repository structure
+      # ------------------------------------------------------------
+      - name: Verify repository
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "REPOSITORY CHECK"
+          echo "=============================================="
+
+          echo "Working directory:"
+          pwd
+
+          echo
+          echo "Repository files:"
+          find . -maxdepth 2 -type f | sort
+
+          echo
+          echo "Checking required files..."
+
+          test -f requirements.txt || {
+            echo "ERROR: requirements.txt is missing."
+            exit 1
+          }
+
+          test -f V8_4_nse_quant_only.py || {
+            echo "ERROR: V8_4_nse_quant_only.py is missing from repository root."
+            echo
+            echo "Files in repository root:"
+            ls -la
+            exit 1
+          }
+
+          echo "OK: requirements.txt found."
+          echo "OK: V8_4_nse_quant_only.py found."
+
+      # ------------------------------------------------------------
+      # 4. Install dependencies
+      # ------------------------------------------------------------
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -e
+
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      # ------------------------------------------------------------
+      # 5. Verify Python/scikit-learn environment
+      # ------------------------------------------------------------
+      - name: Show Python environment
+        shell: bash
+        run: |
+          python --version
+          python -c "import numpy; print('numpy:', numpy.__version__)"
+          python -c "import pandas; print('pandas:', pandas.__version__)"
+          python -c "import sklearn; print('scikit-learn:', sklearn.__version__)"
+          python -c "import yfinance; print('yfinance:', yfinance.__version__)"
+
+      # ------------------------------------------------------------
+      # 6. Compile before running
+      # ------------------------------------------------------------
+      - name: Syntax check V8.4
+        shell: bash
+        run: |
+          set -e
+          python -m py_compile V8_4_nse_quant_only.py
+          echo "V8.4 syntax check PASSED."
+
+      # ------------------------------------------------------------
+      # 7. Create output directories
+      # ------------------------------------------------------------
+      - name: Prepare directories
+        shell: bash
+        run: |
+          mkdir -p audit
+          mkdir -p output
+          mkdir -p data
+
+      # ------------------------------------------------------------
+      # 8. Run V8.4
+      # ------------------------------------------------------------
+      - name: Run V8.4 NSE Quant
+        env:
+          BACKTEST_PERIOD: "6y"
+          PYTHONUNBUFFERED: "1"
+
+          # Telegram is optional.
+          # The Python program should read these only if configured.
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "RUNNING V8.4 NSE QUANT-ONLY ENGINE"
+          echo "=============================================="
+
+          python V8_4_nse_quant_only.py
+
+      # ------------------------------------------------------------
+      # 9. Show generated files
+      # ------------------------------------------------------------
+      - name: Show outputs
+        if: always()
+        shell: bash
+        run: |
+          echo "=============================================="
+          echo "OUTPUT FILES"
+          echo "=============================================="
+
+          echo
+          echo "Audit:"
+          find audit -maxdepth 3 -type f -print 2>/dev/null || true
+
+          echo
+          echo "Output:"
+          find output -maxdepth 3 -type f -print 2>/dev/null || true
+
+      # ------------------------------------------------------------
+      # 10. Upload audit/output
+      # ------------------------------------------------------------
+      - name: Upload V8.4 audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: V8.4-quant-audit
+          path: |
+            audit/
+            output/
+          if-no-files-found: warn
+          retention-days: 30
